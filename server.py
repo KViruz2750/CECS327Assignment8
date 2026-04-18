@@ -1,6 +1,74 @@
 import socket
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+
+SHARING_START_TIME = datetime(2026, 4, 18, 10, 0, 0) #year month day hour minute second
+
+def fetch_sensor_stats(engine, board_names, sensor_key, interval_str, before_time=None):
+    """Helper function to get the SUM and COUNT of a JSON sensor value"""
+    sql = f"""
+        SELECT 
+            SUM((payload->>'{sensor_key}')::numeric) as total_sum,
+            COUNT(*) as total_count
+        FROM sensor_table_virtual
+        WHERE payload->>'board_name' = :board_names 
+        AND time >= NOW() - CAST(:interval AS INTERVAL)
+    """
+    
+    #if we need missing history from the peer, ONLY grab data from before sharing started
+    if before_time:
+        sql += f" AND time < '{before_time.strftime('%Y-%m-%d %H:%M:%S')}'"
+        
+    query = text(sql)
+    
+    with engine.connect() as conn:
+        result = conn.execute(query, {
+            "board_names": board_names, 
+            "interval": interval_str
+        }).fetchone()
+        
+        total_sum = float(result[0]) if result and result[0] is not None else 0.0
+        total_count = int(result[1]) if result and result[1] is not None else 0
+        return total_sum, total_count
+    
+def process_moisture_query(local_engine, peer_engine):
+    """Calculates the distributed average for the past hour, week, and month."""
+    """Answers Query #1"""
+    board_names = ("fridge1", "fridge2")
+    sensor_key = "Moisture"     
+    
+    intervals = {"hour": "1 hour", "week": "7 days", "month": "30 days"}
+    results = []
+
+    for label, sql_interval in intervals.items():
+        #1. fetch data from local database
+        local_sum, local_count = fetch_sensor_stats(local_engine, board_names, sensor_key, sql_interval)
+        total_sum, total_count = local_sum, local_count
+        
+        #2. check if we need to fetch missing data from partner'S database
+        now = datetime.now()
+        if label == "hour": delta = timedelta(hours=1)
+        elif label == "week": delta = timedelta(days=7)
+        else: delta = timedelta(days=30)
+        
+        interval_start_time = now - delta
+        
+        #if the query goes further back than when we started sharing, this will grab the missing data
+        if interval_start_time < SHARING_START_TIME:
+            print(f"[{label}] Missing peer data detected. Querying partner database...")
+            peer_sum, peer_count = fetch_sensor_stats(peer_engine, board_names, sensor_key, sql_interval, before_time=SHARING_START_TIME)
+            total_sum += peer_sum
+            total_count += peer_count
+            
+        #3. calculate the final average
+        if total_count > 0:
+            avg = total_sum / total_count
+            results.append(f"{label.capitalize()}: {avg:.2f}%")
+        else:
+            results.append(f"{label.capitalize()}: No data")
+
+    return "Moisture Averages -> " + " | ".join(results)
 
 def main():
     host = "0.0.0.0"  #listens on available network interfaces
