@@ -1,6 +1,13 @@
 import socket
 
 
+ALLOWED_QUERIES = {
+    "What is the average moisture inside our kitchen fridges in the past hours, week and month?",
+    "What is the average water consumption per cycle across our smart dishwashers in the past hour, week and month?",
+    "Which house consumed more electricity in the past 24 hours, and by how much?",
+}
+
+
 def main():
     #prompt user for server IP
     server_ip = input("Enter server IP address: ").strip()
@@ -22,14 +29,17 @@ def main():
         print("Connected to server.")
 
         while True:
-            message = input("Enter a message to send ('quit' to exit): ")
+            message = input("Enter a message to send ('quit' to exit): ").strip()
 
             if message.lower() == "quit":
                 print("Closing connection.")
                 break
 
-            client_socket.sendall(message.encode("utf-8"))
+            if message not in ALLOWED_QUERIES:
+                print("Sorry, this query cannot be processed. Please try one of the supported queries.")
+                continue
 
+            client_socket.sendall(message.encode("utf-8"))
             response = client_socket.recv(1024).decode("utf-8")
             print(f"Server response: {response}")
 

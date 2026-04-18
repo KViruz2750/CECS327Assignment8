@@ -7,7 +7,7 @@ def main():
 
     #setting db up
     print("=== Database Configuration ===")
-    db_string = input("Enter NeonDB Connection String (postgresql://...): ").strip()
+    local_db_string = input("Enter NeonDB Connection String (postgresql://...): ").strip()
     peer_db_string = input("Enter Partner's NeonDB Connection String: ").strip()
     
     try:
