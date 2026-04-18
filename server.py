@@ -8,14 +8,16 @@ def main():
     #setting db up
     print("=== Database Configuration ===")
     db_string = input("Enter NeonDB Connection String (postgresql://...): ").strip()
+    peer_db_string = input("Enter Partner's NeonDB Connection String: ").strip()
     
     try:
-        #this creates the SQLAlchemy engine
-        engine = create_engine(db_string)
+        #this creates the SQLAlchemy engine for both local and partner databases
+        local_engine = create_engine(local_db_string)
+        peer_engine = create_engine(peer_db_string)
         
-        #testing the connection immediately to catch errors early
-        with engine.connect() as db_conn:
-            print("Success: Connected to NeonDB!\n") #since we are connecting to neonDB
+        #testing the connection for both dbs
+        with local_engine.connect() as conn1, peer_engine.connect() as conn2:
+            print("Success: Connected to BOTH NeonDB instances!\n")
             
     except SQLAlchemyError as e:
         print(f"Database connection error: {e}")
