@@ -55,7 +55,28 @@ def main():
                 message = data.decode("utf-8")
                 print(f"Received from client: {message}")
 
-                response = f"SERVER ACK: {message.upper()}"
+                message_lower = message.lower()
+                response = ""
+
+
+                #---Routing Query Logic
+                if "average moisture" in message_lower:
+                    print("---> Routing to: Moisture Logic")
+                    response = "Moisture Query recognized (db logic pending)."
+                elif "water consumption" in message_lower:
+                    print("--> Routing to: Water Consumption Logic")
+                    response = "Water query recognized (db logic pending)."
+
+                elif "electricity" in message_lower:
+                    print("--> Routing to: Electricity Logic")
+                    response = "Electricity query recognized (db logic pending)."
+                else:
+                    print("--> Unknown query received.")
+                    response = "Error: Query not recognized."
+
+
+
+
                 conn.sendall(response.encode("utf-8"))
                 print(f"Sent to client: {response}")
 
