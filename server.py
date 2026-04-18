@@ -70,6 +70,49 @@ def process_moisture_query(local_engine, peer_engine):
 
     return "Moisture Averages -> " + " | ".join(results)
 
+def process_water_query(local_engine, peer_engine):
+    """Calculates the distributed average water consumption for dishwashers."""
+    """Answers Query 2, and almost identical to query 1 code"""
+    
+    # Based on your screenshot, the board is named 'dishwasher'
+    # Note the comma inside the parenthesis! It's required to make it a valid Python tuple.
+    board_names = ("dishwasher",) 
+    
+    # UPDATE THIS: Check your DataNiz payload to see what the water sensor is actually called
+    sensor_key = "Water"     
+    
+    intervals = {"hour": "1 hour", "week": "7 days", "month": "30 days"}
+    results = []
+
+    for label, sql_interval in intervals.items():
+        #1. fetch local data
+        local_sum, local_count = fetch_sensor_stats(local_engine, board_names, sensor_key, sql_interval)
+        total_sum, total_count = local_sum, local_count
+        
+        #2. checking for missing peer history
+        now = datetime.now()
+        if label == "hour": delta = timedelta(hours=1)
+        elif label == "week": delta = timedelta(days=7)
+        else: delta = timedelta(days=30)
+        
+        interval_start_time = now - delta
+        
+        if interval_start_time < SHARING_START_TIME:
+            print(f"[{label}] Missing peer data detected. Querying partner database...")
+            peer_sum, peer_count = fetch_sensor_stats(peer_engine, board_names, sensor_key, sql_interval, before_time=SHARING_START_TIME)
+            total_sum += peer_sum
+            total_count += peer_count
+            
+        #3. calculate final average
+        if total_count > 0:
+            avg = total_sum / total_count
+            results.append(f"{label.capitalize()}: {avg:.2f} gallons")
+        else:
+            results.append(f"{label.capitalize()}: No data")
+
+    return "Water Consumption Averages -> " + " | ".join(results)
+
+
 def main():
     host = "0.0.0.0"  #listens on available network interfaces
 
@@ -130,10 +173,10 @@ def main():
                 #---Routing Query Logic
                 if "average moisture" in message_lower:
                     print("---> Routing to: Moisture Logic")
-                    response = "Moisture Query recognized (db logic pending)."
+                    response = process_moisture_query(local_engine, peer_engine)
                 elif "water consumption" in message_lower:
                     print("--> Routing to: Water Consumption Logic")
-                    response = "Water query recognized (db logic pending)."
+                    response = process_water_query(local_engine, peer_engine)
 
                 elif "electricity" in message_lower:
                     print("--> Routing to: Electricity Logic")
