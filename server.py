@@ -7,7 +7,6 @@ from sqlalchemy.exc import SQLAlchemyError
 PST = ZoneInfo("America/Los_Angeles")
 SHARING_START_TIME = datetime(2026, 4, 18, 10, 0, 0, tzinfo=PST)
 
-def fetch_sensor_stats(engine, board_names, sensor_key, interval_str, before_time=None):
 
 def fetch_sensor_stats(engine, board_names, sensor_key, interval_str, before_time=None):
     """Helper function to get the SUM and COUNT of a JSON sensor value"""
