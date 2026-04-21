@@ -1,9 +1,13 @@
 import socket
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
-SHARING_START_TIME = datetime(2026, 4, 18, 10, 0, 0) #year month day hour minute seconddef fetch_sensor_stats(engine, board_names, sensor_key, interval_str, before_time=None):
+PST = ZoneInfo("America/Los_Angeles")
+SHARING_START_TIME = datetime(2026, 4, 18, 10, 0, 0, tzinfo=PST)
+
+def fetch_sensor_stats(engine, board_names, sensor_key, interval_str, before_time=None):
 
 def fetch_sensor_stats(engine, board_names, sensor_key, interval_str, before_time=None):
     """Helper function to get the SUM and COUNT of a JSON sensor value"""
@@ -52,11 +56,11 @@ def process_moisture_query(local_engine, peer_engine):
         total_sum, total_count = local_sum, local_count
         
         #2. check if we need to fetch missing data from partner'S database
-        now = datetime.now()
+        now = datetime.now(PST)
         if label == "hour": delta = timedelta(hours=1)
         elif label == "week": delta = timedelta(days=7)
         else: delta = timedelta(days=30)
-        
+
         interval_start_time = now - delta
         
         #if the query goes further back than when we started sharing, this will grab the missing data
@@ -92,11 +96,11 @@ def process_water_query(local_engine, peer_engine):
         total_sum, total_count = local_sum, local_count
         
         #2. checking for missing peer history
-        now = datetime.now()
+        now = datetime.now(PST)
         if label == "hour": delta = timedelta(hours=1)
         elif label == "week": delta = timedelta(days=7)
         else: delta = timedelta(days=30)
-        
+
         interval_start_time = now - delta
         
         if interval_start_time < SHARING_START_TIME:
@@ -141,7 +145,7 @@ def process_electricity_query(local_engine, peer_engine):
             house_totals[email] = house_totals.get(email, 0.0) + float(total)
 
     #2. fetch missing history from peer database
-    twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+    twenty_four_hours_ago = datetime.now(PST) - timedelta(hours=24)
     
     if twenty_four_hours_ago < SHARING_START_TIME:
         print("[24 Hours] Missing historical peer data. Querying partner database...")
