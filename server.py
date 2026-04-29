@@ -3,7 +3,14 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+from dotenv import load_dotenv
 
+import os
+
+load_dotenv()
+
+DB_URL_Connection_Khoi=os.getenv("DB_URL_Connection_Khoi")
+DB_URL_Connection_Karan=os.getenv("DB_URL_Connection_Karan")
 PST = ZoneInfo("America/Los_Angeles")
 SHARING_START_TIME = datetime(2026, 4, 18, 10, 0, 0, tzinfo=PST)
 
@@ -198,8 +205,9 @@ def main():
 
     #setting db up
     print("=== Database Configuration ===")
-    local_db_string = input("Enter NeonDB Connection String (postgresql://...): ").strip()
-    peer_db_string = input("Enter Partner's NeonDB Connection String: ").strip()
+    print("Attempting to connect to NeonDB instances...")
+    local_db_string = DB_URL_Connection_Khoi
+    peer_db_string = DB_URL_Connection_Karan
     
     try:
         #this creates the SQLAlchemy engine for both local and partner databases
