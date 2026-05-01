@@ -12,6 +12,7 @@ load_dotenv()
 DB_URL_Connection_Khoi=os.getenv("DB_URL_Connection_Khoi")
 DB_URL_Connection_Karan=os.getenv("DB_URL_Connection_Karan")
 PST = ZoneInfo("America/Los_Angeles")
+UTC = ZoneInfo("UTC")
 SHARING_START_TIME = datetime(2026, 4, 18, 10, 0, 0, tzinfo=PST)
 
 
@@ -61,20 +62,10 @@ def process_moisture_query(local_engine, peer_engine):
         local_sum, local_count = fetch_sensor_stats(local_engine, board_names, sensor_key, sql_interval)
         total_sum, total_count = local_sum, local_count
         
-        #2. check if we need to fetch missing data from partner'S database
-        now = datetime.now(PST)
-        if label == "hour": delta = timedelta(hours=1)
-        elif label == "week": delta = timedelta(days=7)
-        else: delta = timedelta(days=30)
-
-        interval_start_time = now - delta
-        
-        #if the query goes further back than when we started sharing, this will grab the missing data
-        if interval_start_time < SHARING_START_TIME:
-            print(f"[{label}] Missing peer data detected. Querying partner database...")
-            peer_sum, peer_count = fetch_sensor_stats(peer_engine, board_names, sensor_key, sql_interval, before_time=SHARING_START_TIME)
-            total_sum += peer_sum
-            total_count += peer_count
+        #2. always fetch partner data
+        peer_sum, peer_count = fetch_sensor_stats(peer_engine, board_names, sensor_key, sql_interval)
+        total_sum += peer_sum
+        total_count += peer_count
             
         #3. calculate the final average
         if total_count > 0:
@@ -101,19 +92,10 @@ def process_water_query(local_engine, peer_engine):
         local_sum, local_count = fetch_sensor_stats(local_engine, board_names, sensor_key, sql_interval)
         total_sum, total_count = local_sum, local_count
         
-        #2. checking for missing peer history
-        now = datetime.now(PST)
-        if label == "hour": delta = timedelta(hours=1)
-        elif label == "week": delta = timedelta(days=7)
-        else: delta = timedelta(days=30)
-
-        interval_start_time = now - delta
-        
-        if interval_start_time < SHARING_START_TIME:
-            print(f"[{label}] Missing peer data detected. Querying partner database...")
-            peer_sum, peer_count = fetch_sensor_stats(peer_engine, board_names, sensor_key, sql_interval, before_time=SHARING_START_TIME)
-            total_sum += peer_sum
-            total_count += peer_count
+        #2. always fetch partner data (user chose full merge)
+        peer_sum, peer_count = fetch_sensor_stats(peer_engine, board_names, sensor_key, sql_interval)
+        total_sum += peer_sum
+        total_count += peer_count
             
         #3. calculate final average
         if total_count > 0:
@@ -130,6 +112,8 @@ def process_electricity_query(local_engine, peer_engine):
     """Calculates total 24-hour electricity by summing specific Ammeters across all appliances."""
     
     house_totals = {}
+    window_end = datetime.now(UTC)
+    window_start = window_end - timedelta(hours=24)
 
     #1. fetch from LOCAL database
     local_sql = text("""
@@ -141,40 +125,41 @@ def process_electricity_query(local_engine, peer_engine):
                 COALESCE((payload->>'Ammeter3')::numeric, 0)
             ) as total_electricity
         FROM sensor_table_virtual
-        WHERE time >= NOW() - INTERVAL '24 hours'
+        WHERE time >= :window_start
+        AND time < :window_end
         GROUP BY SPLIT_PART(topic, '/', 1)
     """)
     
     with local_engine.connect() as conn:
-        local_results = conn.execute(local_sql).fetchall()
+        local_results = conn.execute(local_sql, {
+            "window_start": window_start,
+            "window_end": window_end
+        }).fetchall()
         for email, total in local_results:
             house_totals[email] = house_totals.get(email, 0.0) + float(total)
 
-    #2. fetch missing history from peer database
-    twenty_four_hours_ago = datetime.now(PST) - timedelta(hours=24)
+    #2. fetch from partner database for the same window
+    peer_sql = text("""
+        SELECT 
+            SPLIT_PART(topic, '/', 1) as house_email,
+            SUM(
+                COALESCE((payload->>'Ammeter')::numeric, 0) +
+                COALESCE((payload->>'Ammeter2')::numeric, 0) +
+                COALESCE((payload->>'Ammeter3')::numeric, 0)
+            ) as total_electricity
+        FROM sensor_table_virtual
+        WHERE time >= :window_start
+        AND time < :window_end
+        GROUP BY SPLIT_PART(topic, '/', 1)
+    """)
     
-    if twenty_four_hours_ago < SHARING_START_TIME:
-        print("[24 Hours] Missing historical peer data. Querying partner database...")
-        peer_sql = text("""
-            SELECT 
-                SPLIT_PART(topic, '/', 1) as house_email,
-                SUM(
-                    COALESCE((payload->>'Ammeter')::numeric, 0) +
-                    COALESCE((payload->>'Ammeter2')::numeric, 0) +
-                    COALESCE((payload->>'Ammeter3')::numeric, 0)
-                ) as total_electricity
-            FROM sensor_table_virtual
-            WHERE time >= NOW() - INTERVAL '24 hours'
-            AND time < :sharing_start
-            GROUP BY SPLIT_PART(topic, '/', 1)
-        """)
-        
-        with peer_engine.connect() as conn:
-            peer_results = conn.execute(peer_sql, {
-                "sharing_start": SHARING_START_TIME.strftime('%Y-%m-%d %H:%M:%S')
-            }).fetchall()
-            for email, total in peer_results:
-                house_totals[email] = house_totals.get(email, 0.0) + float(total)
+    with peer_engine.connect() as conn:
+        peer_results = conn.execute(peer_sql, {
+            "window_start": window_start,
+            "window_end": window_end
+        }).fetchall()
+        for email, total in peer_results:
+            house_totals[email] = house_totals.get(email, 0.0) + float(total)
 
     #3. calculate the difference and format output
     if len(house_totals) < 2:
